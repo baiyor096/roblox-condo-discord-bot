@@ -1,15 +1,18 @@
 from flask import Flask
 from threading import Thread
 
-app = Flask('')
+# สร้างแอป Flask
+app = Flask(__name__)
 
 @app.route('/')
 def main():
-  return "Your bot is alive!"
+    return "Your bot is alive!"
 
 def run():
-  app.run(host="0.0.0.0", port=8080)
+    # รันเซิร์ฟเวอร์ Flask
+    app.run(host="0.0.0.0", port=8080, debug=False)
 
 def keep_alive():
-  server = Thread(target=run)
-  server.start()
+    # เริ่มเซิร์ฟเวอร์ในเธรดใหม่
+    server = Thread(target=run, daemon=True)
+    server.start()
