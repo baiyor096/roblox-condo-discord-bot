@@ -1,163 +1,97 @@
-import sys
-from requests import post, get
-import requests
-from os import name as os_name, system
-#and i found an downloader
-from discord import Webhook, RequestsWebhookAdapter
-import codecs
-import json
-import discord
-from discord.ext import commands
-import secrets
-from unblacklister import uniqueId, referentt, assetId
 import os
-from ad import advertise
-import lxml.etree
-from xml.dom import minidom
-from xml.etree import ElementTree as etree
-from keep_alive import keep_alive
+import json
+from discord import Webhook, RequestsWebhookAdapter, Embed
+from discord.ext import commands
+import aiohttp
+import asyncio
 
+bot = commands.Bot(command_prefix="-")  # กำหนด prefix สำหรับคำสั่ง
 
-bot = commands.Bot(command_prefix="-") #prefix for command
+# โหลดตัวแปรจาก environment
+DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
+WEBHOOK_URL = os.getenv('WEBHOOK_URL')
+
 @bot.event
 async def on_ready():
+    print(f"Logged in as {bot.user}")
     await bot.change_presence(activity=discord.Streaming(name='-Upload', url='https://www.twitch.tv/'))
 
-def main(cookie):
-    uniqueId()
-    referentt()
-    assetId()
-    token = post("https://auth.roblox.com/v2/logout", 
-                 cookies={
-                     ".ROBLOSECURITY": cookie
-                 }).headers['X-CSRF-TOKEN']
-    userId = requests.get("https://users.roblox.com/v1/users/authenticated",
-                          headers={
-                              'x-csrf-token': token,
-                              'User-Agent': 'Roblox',
-                                "Connection": "keep-alive"
-                          },
-                          cookies={
-                              '.ROBLOSECURITY': cookie
-                          }).json()["id"]
-    print(f" [DATA] {userId}- UserID")
-    gameId = requests.get("https://inventory.roblox.com/v2/users/" +
-                          str(userId) + "/inventory/9?limit=10&sortOrder=Asc",
-                          headers={
-                              'x-csrf-token': token,
-                              'User-Agent': 'Roblox'
-                          },
-                          cookies={
-                              '.ROBLOSECURITY': cookie
-                          }).json()["data"][0]["assetId"]
-    print(f" [DATA] {gameId} - GameID")
-    myfiles = open("file.rbxlx", "rb").read()
-    unvid = get(
-        "https://api.roblox.com/universes/get-universe-containing-place?placeid="
-        + str(gameId)).json()["UniverseId"]
-    print(f" [DATA] {unvid} - UniverseID")
-    url = f"https://data.roblox.com/Data/Upload.ashx?assetid={str(gameId)}"
+async def get_xcsrf_token(cookie):
+    async with aiohttp.ClientSession(cookies={'.ROBLOSECURITY': cookie}) as session:
+        async with session.post("https://auth.roblox.com/v2/logout") as response:
+            if response.status == 403:
+                return response.headers['x-csrf-token']
+    return None
 
-    url2 = f"https://develop.roblox.com/v2/universes/{str(unvid)}/configuration"
+async def fetch_user_data(cookie, token):
+    async with aiohttp.ClientSession(cookies={'.ROBLOSECURITY': cookie}) as session:
+        async with session.get(
+            "https://users.roblox.com/v1/users/authenticated",
+            headers={'x-csrf-token': token}
+        ) as response:
+            return await response.json()
 
-    avatartype = "MorphToR6"
-    allowprivateservers = True
+async def upload_game(cookie, token, game_file_path):
+    async with aiohttp.ClientSession(cookies={'.ROBLOSECURITY': cookie}) as session:
+        # ดึงข้อมูล userId และ gameId
+        user_data = await fetch_user_data(cookie, token)
+        user_id = user_data.get("id")
+        if not user_id:
+            print("ไม่สามารถดึงข้อมูล user_id ได้")
+            return None
 
-    gamedatao = {
-        "name": "Generated Game",
-        "description": " Created by Async ",
-        "universeAvatarType": avatartype,
-        "universeAnimationType": "Standard",
-        "maxPlayerCount": 45,
-        "allowPrivateServers": allowprivateservers,
-        "privateServerPrice": 0,
-        "permissions": {
-            "IsThirdPartyTeleportAllowed": True,
-            "IsThirdPartyPurchaseAllowed": True
-        }
-    }
-    gameDump = json.dumps(gamedatao)
-    gamestats = requests.patch(
-        url2,
-        headers={
-            'Content-Type': 'application/json',
-            'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.69 Safari/537.36',
-            'x-csrf-token': token
-        },
-        cookies={'.ROBLOSECURITY': cookie},
-        data=gameDump)
-    gameData2 = {
-        "maxPlayerCount": 45,
-    }
-    gamestat = requests.patch(
-        url2,
-        headers={
-            'Content-Type': 'application/json',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.69 Safari/537.36',
-            'x-csrf-token': token
-        },
-        cookies={'.ROBLOSECURITY': cookie},
-        data=gameData2)
+        # อัปโหลดไฟล์เกม
+        with open(game_file_path, "rb") as file:
+            async with session.post(
+                "https://data.roblox.com/Data/Upload.ashx",
+                headers={'x-csrf-token': token, 'Content-Type': 'application/xml'},
+                data=file
+            ) as upload_response:
+                if upload_response.status == 200:
+                    return user_id
+    return None
 
-    print(f" [DATA] {gamestat.status_code} - Successfull upload")
-    upload = post(url,
-                  headers={
-                      'Content-Type': 'application/xml',
-                      'User-Agent': 'Roblox', 
-                      'x-csrf-token': token
-                  },
-                  cookies={'.ROBLOSECURITY': cookie},
-                  data=myfiles)  
-    if upload.status_code == 200:
-        webhook = Webhook.from_url(
-            "https://discord.com/api/webhooks/931646191517700136/IJZOOfza-WOO5zHsmvY1qxN4IXPtpN6M9Y61MqPZ4mzaZFOaawa0Kvz-T8py-RPKuvTX",
-            adapter=RequestsWebhookAdapter())
-        webhook.send("💯**NEW GAME UPLOADED**💯")
-        e = discord.Embed(title="Automatically Uploaded Condo",
-        description="2 Player Condos! **https://discord.gg/eqcsaF2GZ3**")
-        e.add_field(
-            name="Game Link",
-            value=
-            f"__**[Click here to play!](https://www.roblox.com/games/{gameId}/)**__",
-            inline=True)
-        e.set_image(
-            url=
-            'https://cdn.discordapp.com/attachments/902654074799935538/946537182733172766/standard.png'
-        )
-        e.set_footer(text='Bot Created by Async#5015')
-        webhook.send(embed=e)
-        global link
-        link = gameId
-         
+async def notify_discord(game_id):
+    webhook = Webhook.from_url(WEBHOOK_URL, adapter=RequestsWebhookAdapter())
+    embed = Embed(
+        title="เกมใหม่ถูกอัปโหลด!",
+        description=f"[คลิกที่นี่เพื่อเล่น!](https://www.roblox.com/games/{game_id}/)",
+        color=0x00ff00
+    )
+    embed.set_footer(text="สร้างโดย Async")
+    webhook.send(embed=embed)
 
 @bot.command()
 async def Upload(ctx):
-  embed = discord.Embed(
-            title = "Condo Uploader v0.9 Created by Async#5015",
-            description = "Please Insert a Valid Cookie!"
-        )
-  sent = await ctx.send(embed=embed)  
-  cookieinput = await bot.wait_for("message")
-  if '_|WARNING' in cookieinput.content:
-         embed = discord.Embed(
-            title = "Condo Uploader v0.9 Created by Async#5015",
-            description = "Valid Cookie Uploading..."
-        )
-  else:
-     await ctx.send(":x:**Invalid Cookie**:x:")
-     return
-  sent = await ctx.send(embed=embed) 
-  await ctx.send(":white_check_mark:**Successfully Uploaded!**:white_check_mark: ")
-  main(cookieinput.content)
-  await ctx.send("Do you wish to advertise the game? (Say Y for yes or N for no) ")
-  yn = await bot.wait_for("message")
-  if 'y' in yn.content.lower():
-      await ctx.send("**Marked as (Public)**")
-      advertise(link)
-  elif 'n' in yn.content.lower():
-     await ctx.send(":x:**Marked as (Private)**:x:")
-     #return
+    await ctx.send("กรุณาใส่คุกกี้ .ROBLOSECURITY:")
+    try:
+        cookie_message = await bot.wait_for('message', timeout=60.0)
+        cookie = cookie_message.content.strip()
 
-keep_alive()
-bot.run(os.environ['token'])
+        if '_|WARNING' not in cookie:
+            await ctx.send(":x: คุกกี้ไม่ถูกต้อง!")
+            return
+
+        # ดึง X-CSRF Token
+        token = await get_xcsrf_token(cookie)
+        if not token:
+            await ctx.send(":x: ไม่สามารถดึง X-CSRF Token ได้!")
+            return
+
+        # อัปโหลดเกม
+        game_file_path = "file.rbxlx"  # เปลี่ยน path ตามไฟล์จริง
+        user_id = await upload_game(cookie, token, game_file_path)
+
+        if user_id:
+            await ctx.send(":white_check_mark: อัปโหลดสำเร็จ!")
+            await notify_discord(user_id)
+        else:
+            await ctx.send(":x: การอัปโหลดล้มเหลว!")
+    except asyncio.TimeoutError:
+        await ctx.send(":x: การใส่คุกกี้เกินเวลาที่กำหนด!")
+
+# รันบอท
+if DISCORD_TOKEN:
+    bot.run(DISCORD_TOKEN)
+else:
+    print("กรุณาตั้งค่า DISCORD_TOKEN ใน environment variables")
